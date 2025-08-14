@@ -1,0 +1,8 @@
+name: BASS
+description: "Bindings para BASS audio library"
+output: lib/src/ffi/bass_bindings.dart
+headers:
+  entry-points:
+    - lib/src/ffi/bass.h
+compiler-opts:
+  - -Imacos/Runner/bass
