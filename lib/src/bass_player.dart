@@ -1,10 +1,10 @@
-// Classe responsável por gerenciar reprodução de áudio com controle total
-// Inclui: play, pause, stop, statusStream, levelStream, waveform e cache
 import 'dart:async';
 import 'dart:ffi';
+import 'package:bass_flutter/src/ffi/bass_bindings.dart';
 import 'package:ffi/ffi.dart';
 import 'package:bass_flutter/src/ffi/bass_constants.dart';
 import 'package:bass_flutter/src/ffi/bass_ffi_loader.dart';
+import 'package:flutter/foundation.dart';
 
 /// Enum com os possíveis status de reprodução
 enum BassPlayerStatus { stopped, playing, stalled, paused, unknown }
@@ -33,6 +33,13 @@ class LevelStereo {
   final double right;
 
   const LevelStereo(this.left, this.right);
+}
+
+class BassAudioDevice {
+  final int id;
+  final String name;
+
+  const BassAudioDevice(this.id, this.name);
 }
 
 /// Classe de player de áudio baseada na BASS
@@ -140,6 +147,61 @@ class BassPlayer {
     final bass = BassLoader.instance;
     if (_stream == 0) return false;
     return bass.BASS_ChannelIsActive(_stream) == BassChannelStatus.PLAYING;
+  }
+
+  int getDevice() {
+    final bass = BassLoader.instance;
+
+    return bass.BASS_GetDevice();
+  }
+
+  /// Retorna a lista de dispositivos de áudio disponíveis no sistema.
+  ///
+  /// Utiliza a função `BASS_GetDeviceInfo` da biblioteca BASS para iterar
+  /// sobre todos os dispositivos detectados, coletando o `id` (índice do
+  /// dispositivo) e o `name` (nome descritivo fornecido pelo sistema/driver).
+  ///
+  /// Apenas dispositivos ativos são retornados, garantindo que o usuário
+  /// possa selecionar saídas de áudio válidas para reprodução.
+  List<BassAudioDevice> listAudioDevices() {
+    final bass = BassLoader.instance;
+    final devices = <BassAudioDevice>[];
+    final infoPtr = calloc<BASS_DEVICEINFO>();
+
+    for (var i = 0; bass.BASS_GetDeviceInfo(i, infoPtr) != 0; i++) {
+      final info = infoPtr.ref;
+      if ((info.flags & BASS_DEVICE_ENABLED) != 0) {
+        final name = info.name.cast<Utf8>().toDartString();
+        devices.add(BassAudioDevice(i, name));
+      }
+    }
+
+    calloc.free(infoPtr);
+    return devices;
+  }
+
+  bool setAudioDevice(int id) {
+    final bass = BassLoader.instance;
+
+    // 1) Garante init do device alvo
+    final inited = bass.BASS_Init(id, 44100, 0, nullptr, nullptr) != 0;
+    if (!inited) {
+      final err = bass.BASS_ErrorGetCode();
+      // 14 = BASS_ERROR_ALREADY (já inicializado) → ok
+      if (err != 14) {
+        debugPrint('BASS_Init($id) falhou: $err');
+        return false;
+      }
+    }
+
+    // 2) Define o device "current" desta thread
+    if (bass.BASS_SetDevice(id) == 0) {
+      final err = bass.BASS_ErrorGetCode();
+      debugPrint('BASS_SetDevice($id) falhou: $err');
+      return false;
+    }
+
+    return true;
   }
 
   /// Gera a waveform completa com [points] amostras (default: 1500)
