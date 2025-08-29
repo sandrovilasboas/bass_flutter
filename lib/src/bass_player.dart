@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:io';
 import 'package:bass_flutter/src/ffi/bass_bindings.dart';
 import 'package:ffi/ffi.dart';
 import 'package:bass_flutter/src/ffi/bass_constants.dart';
 import 'package:bass_flutter/src/ffi/bass_ffi_loader.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:convert' show latin1;
 
 /// Enum com os possíveis status de reprodução
 enum BassPlayerStatus { stopped, playing, stalled, paused, unknown }
@@ -171,13 +173,32 @@ class BassPlayer {
     for (var i = 0; bass.BASS_GetDeviceInfo(i, infoPtr) != 0; i++) {
       final info = infoPtr.ref;
       if ((info.flags & BASS_DEVICE_ENABLED) != 0) {
-        final name = info.name.cast<Utf8>().toDartString();
+        final name = _readDeviceName(info.name.cast<Void>());
         devices.add(BassAudioDevice(i, name));
       }
     }
 
     calloc.free(infoPtr);
     return devices;
+  }
+
+  String _readAnsi(Pointer<Uint8> p) {
+    final bytes = <int>[];
+    for (var i = 0; ; i++) {
+      final b = p[i];
+      if (b == 0) break;
+
+      bytes.add(b);
+    }
+    return latin1.decode(bytes);
+  }
+
+  String _readDeviceName(Pointer<Void> p) {
+    if (Platform.isWindows) {
+      return _readAnsi(p.cast<Uint8>());
+    }
+
+    return p.cast<Utf8>().toDartString();
   }
 
   bool setAudioDevice(int id) {
