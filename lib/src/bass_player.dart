@@ -106,22 +106,6 @@ class BassPlayer {
 
   int getDevice() => _deviceId;
 
-  List<BassAudioDevice> listAudioDevices() {
-    final bass = BassLoader.instance;
-    final devices = <BassAudioDevice>[];
-    final infoPtr = calloc<BASS_DEVICEINFO>();
-    for (var i = 0; bass.BASS_GetDeviceInfo(i, infoPtr) != 0; i++) {
-      final info = infoPtr.ref;
-      if ((info.flags & BASS_DEVICE_ENABLED) != 0) {
-        final name = _readDeviceName(info.name.cast<Void>());
-        devices.add(BassAudioDevice(i, name));
-      }
-    }
-    calloc.free(infoPtr);
-    return devices;
-  }
-
-<<<<<<< HEAD
   String _readAnsi(Pointer<Uint8> p) {
     final bytes = <int>[];
     for (var i = 0; ; i++) {
@@ -141,13 +125,24 @@ class BassPlayer {
     return p.cast<Utf8>().toDartString();
   }
 
-  bool setAudioDevice(int id) {
+  List<BassAudioDevice> listAudioDevices() {
     final bass = BassLoader.instance;
-=======
+    final devices = <BassAudioDevice>[];
+    final infoPtr = calloc<BASS_DEVICEINFO>();
+    for (var i = 0; bass.BASS_GetDeviceInfo(i, infoPtr) != 0; i++) {
+      final info = infoPtr.ref;
+      if ((info.flags & BASS_DEVICE_ENABLED) != 0) {
+        final name = info.name.cast<Utf8>().toDartString();
+        devices.add(BassAudioDevice(i, name));
+      }
+    }
+    calloc.free(infoPtr);
+    return devices;
+  }
+
   bool prepare(String path) {
     return _withDevice<bool>(() {
       final bass = BassLoader.instance;
->>>>>>> 3787283 (feat: adicionado config para multiplos devices)
 
       if (_stream != 0) {
         bass.BASS_StreamFree(_stream);
