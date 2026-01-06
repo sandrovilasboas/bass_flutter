@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 import 'package:bass_flutter/src/ffi/bass_constants.dart';
 import 'package:bass_flutter/src/ffi/bass_ffi_loader.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:math' as math;
 import 'dart:convert' show latin1;
 
 enum BassPlayerStatus { stopped, playing, stalled, paused, unknown }
@@ -66,7 +67,6 @@ class BassPlayer {
     _startLevelTicker();
   }
 
-  // ---------- Helpers de device ----------
   bool _ensureInitDevice(int id) {
     final bass = BassLoader.instance;
     if (_initedDevices.contains(id)) return true;
@@ -129,13 +129,15 @@ class BassPlayer {
     final bass = BassLoader.instance;
     final devices = <BassAudioDevice>[];
     final infoPtr = calloc<BASS_DEVICEINFO>();
+
     for (var i = 0; bass.BASS_GetDeviceInfo(i, infoPtr) != 0; i++) {
       final info = infoPtr.ref;
       if ((info.flags & BASS_DEVICE_ENABLED) != 0) {
-        final name = info.name.cast<Utf8>().toDartString();
+        final name = _readDeviceName(info.name.cast<Void>());
         devices.add(BassAudioDevice(i, name));
       }
     }
+
     calloc.free(infoPtr);
     return devices;
   }
@@ -149,15 +151,29 @@ class BassPlayer {
         _stream = 0;
       }
 
-      final cPath = path.toNativeUtf8();
-      _stream = bass.BASS_StreamCreateFile(
-        0,
-        cPath.cast(),
-        0,
-        0,
-        BassStreamFlags.PRESCAN | BassStreamFlags.FLOAT,
-      );
-      calloc.free(cPath);
+      if (Platform.isWindows) {
+        final wPath = path.toNativeUtf16();
+        _stream = bass.BASS_StreamCreateFile(
+          0,
+          wPath.cast(),
+          0,
+          0,
+          BassStreamFlags.PRESCAN |
+              BassStreamFlags.FLOAT |
+              BassStreamFlags.UNICODE,
+        );
+        calloc.free(wPath);
+      } else {
+        final cPath = path.toNativeUtf8();
+        _stream = bass.BASS_StreamCreateFile(
+          0,
+          cPath.cast(),
+          0,
+          0,
+          BassStreamFlags.PRESCAN | BassStreamFlags.FLOAT,
+        );
+        calloc.free(cPath);
+      }
 
       return _stream != 0;
     }, onFail: false);
@@ -167,7 +183,13 @@ class BassPlayer {
     if (_stream == 0) return false;
     return _withDevice<bool>(() {
       final bass = BassLoader.instance;
-      return bass.BASS_ChannelPlay(_stream, restart ? 1 : 0) != 0;
+      final result = bass.BASS_ChannelPlay(_stream, restart ? 1 : 0) != 0;
+
+      if (!result) {
+        debugPrint('BASS_ChannelPlay falhou: ${bass.BASS_ErrorGetCode()}');
+      }
+
+      return result;
     }, onFail: false);
   }
 
@@ -191,8 +213,15 @@ class BassPlayer {
     if (_stream == 0) return false;
     return _withDevice<bool>(() {
       final bass = BassLoader.instance;
-      return bass.BASS_ChannelSetAttribute(_stream, 2, volume) != 0;
+      final v = perceptualVolume(volume, gamma: 2.4);
+
+      return bass.BASS_ChannelSetAttribute(_stream, 2, v) != 0;
     }, onFail: false);
+  }
+
+  double perceptualVolume(double v, {double gamma = 2.2}) {
+    v = v.clamp(0.0, 1.0);
+    return math.pow(v, gamma).toDouble();
   }
 
   bool setPosition(double seconds) {
